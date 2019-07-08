@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 module Octoshark
   class ConnectionPoolsManager
     include CurrentConnection
@@ -19,7 +21,7 @@ module Octoshark
       @@connection_managers = []
     end
 
-    attr_reader :connection_pools
+    attr_reader :connection_pools, :configs
 
     def initialize(configs = {})
       @configs = configs.with_indifferent_access
@@ -33,6 +35,13 @@ module Octoshark
       setup_connection_pools
     end
 
+    def add_config(name, config)
+      return if @connection_pools[name]
+
+      @configs[name] = config
+      @connection_pools[name] = create_connection_pool(name, config)
+    end
+
     def with_connection(name, database_name = nil, &block)
       connection_pool = find_connection_pool(name)
 
@@ -41,13 +50,28 @@ module Octoshark
 
         if database_name
           connection.database_name = database_name
-          connection.execute("use #{database_name}")
+          connection.execute("USE #{database_name};")
         end
 
         change_connection_reference(connection) do
           yield(connection)
         end
       end
+    end
+
+    def set_connection!(name, database_name = nil)
+      connection_pool = find_connection_pool(name)
+
+      connection = connection_pool.checkout
+      connection.connection_name = name
+
+      if database_name
+        connection.database_name = database_name
+        connection.execute("USE #{database_name};")
+      end
+
+      change_connection_reference!(connection)
+      connection
     end
 
     def find_connection_pool(name)
@@ -61,34 +85,35 @@ module Octoshark
     end
 
     private
-    def spec_class
-      if defined?(ActiveRecord::ConnectionAdapters::ConnectionSpecification)
-        spec_class = ActiveRecord::ConnectionAdapters::ConnectionSpecification
-      else
-        # Rails 3.0, 3.1 and 3.2
-        spec_class = ActiveRecord::Base::ConnectionSpecification
-      end
-    end
 
-    def setup_connection_pools
-      @connection_pools = HashWithIndifferentAccess.new
-
-      @configs.each_pair do |name, config|
-        @connection_pools[name] = create_connection_pool(name, config)
-      end
-    end
-
-    def create_connection_pool(name, config)
-      adapter_method = "#{config[:adapter]}_connection"
-      spec =
-        if spec_class.instance_method(:initialize).arity == 3
-          # Rails 5 ConnectionSpecification accepts spec name
-          spec_class.new(name, config, adapter_method)
+      def spec_class
+        if defined?(ActiveRecord::ConnectionAdapters::ConnectionSpecification)
+          spec_class = ActiveRecord::ConnectionAdapters::ConnectionSpecification
         else
-          spec_class.new(config, adapter_method)
+          # Rails 3.0, 3.1 and 3.2
+          spec_class = ActiveRecord::Base::ConnectionSpecification
         end
+      end
 
-      ActiveRecord::ConnectionAdapters::ConnectionPool.new(spec)
-    end
+      def setup_connection_pools
+        @connection_pools = HashWithIndifferentAccess.new
+
+        @configs.each_pair do |name, config|
+          @connection_pools[name] = create_connection_pool(name, config)
+        end
+      end
+
+      def create_connection_pool(name, config)
+        adapter_method = "#{config[:adapter]}_connection"
+        spec =
+          if spec_class.instance_method(:initialize).arity == 3
+            # Rails 5 ConnectionSpecification accepts spec name
+            spec_class.new(name, config, adapter_method)
+          else
+            spec_class.new(config, adapter_method)
+          end
+
+        ActiveRecord::ConnectionAdapters::ConnectionPool.new(spec)
+      end
   end
 end
