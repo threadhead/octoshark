@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 module Octoshark
   module CurrentConnection
     def current_connection
@@ -23,15 +25,20 @@ module Octoshark
     end
 
     private
-    def change_connection_reference(connection, &block)
-      previous_connection = Thread.current[identifier]
-      Thread.current[identifier] = connection
 
-      begin
-        yield
-      ensure
-        Thread.current[identifier] = previous_connection
+      def change_connection_reference(connection, &block)
+        previous_connection = Thread.current[identifier]
+        Thread.current[identifier] = connection
+
+        begin
+          yield
+        ensure
+          Thread.current[identifier] = previous_connection
+        end
       end
-    end
+
+      def change_connection_reference!(connection)
+        Thread.current[identifier] = connection
+      end
   end
 end
