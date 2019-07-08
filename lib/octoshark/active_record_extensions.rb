@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 module Octoshark
   module ConnectionHandler
     def establish_connection(*args)
